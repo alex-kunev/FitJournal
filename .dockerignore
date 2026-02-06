@@ -1,0 +1,9 @@
+**/.git
+**/.vs
+**/.idea
+**/bin
+**/obj
+**/publish
+**/*.db
+**/*.user
+**/node_modules
