@@ -1,0 +1,136 @@
+@page "/feed"
+@using FitJournal.Core.Entities
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.SignalR.Client
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Activity Feed - FitJournal</PageTitle>
+
+<div class="feed-page">
+    <header class="page-header">
+        <h1>Activity Feed 📰</h1>
+        <p class="text-muted">See what's happening in the community</p>
+    </header>
+
+    <div class="feed-container">
+        @if (activities.Any())
+        {
+            <div class="activity-list">
+                @foreach (var activity in activities.OrderByDescending(a => a.CreatedAt))
+                {
+                    <div class="activity-item">
+                        <div class="activity-icon">@GetActivityIcon(activity.ActivityType)</div>
+                        <div class="activity-content">
+                            <h4>@activity.Title</h4>
+                            @if (!string.IsNullOrEmpty(activity.Description))
+                            {
+                                <p>@activity.Description</p>
+                            }
+                            <span class="activity-time">@FormatTimeAgo(activity.CreatedAt)</span>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="empty-state">
+                <div class="empty-icon">📰</div>
+                <h3>No Activity Yet</h3>
+                <p>Complete workouts and achieve goals to see activity here!</p>
+                <a href="/workouts" class="btn btn-primary">Start a Workout</a>
+            </div>
+        }
+    </div>
+
+    <div class="connection-status">
+        <span class="status-dot @(isConnected ? "connected" : "disconnected")"></span>
+        @(isConnected ? "Live updates active" : "Connecting...")
+    </div>
+</div>
+
+@code {
+    private List<ActivityFeedItem> activities = new();
+    private HubConnection? hubConnection;
+    private bool isConnected = false;
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (userId != null)
+        {
+            activities = await DbContext.ActivityFeedItems
+                .Where(a => a.UserId == userId || a.IsPublic)
+                .OrderByDescending(a => a.CreatedAt)
+                .Take(50)
+                .ToListAsync();
+
+            // Set up SignalR for real-time updates
+            hubConnection = new HubConnectionBuilder()
+                .WithUrl(Navigation.ToAbsoluteUri("/hubs/activity"))
+                .WithAutomaticReconnect()
+                .Build();
+
+            hubConnection.On<ActivityFeedItem>("NewActivity", (activity) =>
+            {
+                activities.Insert(0, activity);
+                if (activities.Count > 50) activities.RemoveAt(activities.Count - 1);
+                InvokeAsync(StateHasChanged);
+            });
+
+            try
+            {
+                await hubConnection.StartAsync();
+                isConnected = true;
+                await hubConnection.SendAsync("JoinUserFeed", userId);
+            }
+            catch
+            {
+                isConnected = false;
+            }
+        }
+    }
+
+    private string GetActivityIcon(string activityType) => activityType switch
+    {
+        "workout_completed" => "💪",
+        "goal_achieved" => "🎯",
+        "achievement_earned" => "🏆",
+        "streak_milestone" => "🔥",
+        "personal_record" => "⭐",
+        "weight_logged" => "⚖️",
+        _ => "📌"
+    };
+
+    private string FormatTimeAgo(DateTime dateTime)
+    {
+        var span = DateTime.UtcNow - dateTime;
+        if (span.TotalMinutes < 1) return "Just now";
+        if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+        if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+        if (span.TotalDays < 7) return $"{(int)span.TotalDays}d ago";
+        return dateTime.ToString("MMM dd");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            if (userId != null)
+            {
+                await hubConnection.SendAsync("LeaveUserFeed", userId);
+            }
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

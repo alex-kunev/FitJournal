@@ -1,0 +1,210 @@
+@page "/measurements"
+@using FitJournal.Core.Entities
+@using FitJournal.Core.Enums
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Body Measurements - FitJournal</PageTitle>
+
+<div class="measurements-page">
+    <header class="page-header">
+        <div>
+            <h1>Body Measurements 📊</h1>
+            <p class="text-muted">Track your body composition over time</p>
+        </div>
+        <button class="btn btn-primary" @onclick="OpenAddModal">
+            ➕ Add Measurement
+        </button>
+    </header>
+
+    <div class="measurements-grid">
+        @foreach (var type in Enum.GetValues<MeasurementType>())
+        {
+            var latest = GetLatest(type);
+            var previous = GetPrevious(type);
+            var change = latest != null && previous != null ? latest.Value - previous.Value : 0;
+            
+            <div class="measurement-card">
+                <div class="measurement-icon">@GetIcon(type)</div>
+                <div class="measurement-type">@type</div>
+                <div class="measurement-value">
+                    @if (latest != null)
+                    {
+                        <span>@latest.Value.ToString("0.#")</span>
+                        <small>@GetUnit(type)</small>
+                    }
+                    else
+                    {
+                        <span class="no-data">--</span>
+                    }
+                </div>
+                @if (change != 0)
+                {
+                    <div class="measurement-change @(change > 0 ? "up" : "down")">
+                        @(change > 0 ? "+" : "")@change.ToString("0.#")
+                    </div>
+                }
+                @if (latest != null)
+                {
+                    <div class="measurement-date">@latest.RecordedAt.ToString("MMM dd")</div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="history-section">
+        <h2>Recent History</h2>
+        @if (measurements.Any())
+        {
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>Notes</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in measurements.OrderByDescending(m => m.RecordedAt).Take(20))
+                    {
+                        <tr>
+                            <td>@m.RecordedAt.ToString("MMM dd, yyyy")</td>
+                            <td>@m.Type</td>
+                            <td><strong>@m.Value.ToString("0.#")</strong> @GetUnit(m.Type)</td>
+                            <td class="text-muted">@m.Notes</td>
+                            <td>
+                                <button class="btn-icon" @onclick="() => DeleteMeasurement(m)">🗑️</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <p class="text-muted">No measurements recorded yet.</p>
+        }
+    </div>
+
+    @if (showAddModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseModal">
+            <div class="add-modal" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>Add Measurement</h3>
+                    <button class="modal-close" @onclick="CloseModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Type</label>
+                        <select class="form-select" @bind="newMeasurement.Type">
+                            @foreach (var type in Enum.GetValues<MeasurementType>())
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Value (@GetUnit(newMeasurement.Type))</label>
+                        <input type="number" class="form-control" @bind="newMeasurement.Value" step="0.1" />
+                    </div>
+                    <div class="form-group">
+                        <label>Date</label>
+                        <input type="date" class="form-control" @bind="measurementDate" />
+                    </div>
+                    <div class="form-group">
+                        <label>Notes (optional)</label>
+                        <input type="text" class="form-control" @bind="newMeasurement.Notes" placeholder="Any notes..." />
+                    </div>
+                    <button class="btn btn-primary" @onclick="SaveMeasurement">Save Measurement</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<BodyMeasurement> measurements = new();
+    private bool showAddModal = false;
+    private BodyMeasurement newMeasurement = new();
+    private DateTime measurementDate = DateTime.Today;
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await LoadMeasurements();
+    }
+
+    private async Task LoadMeasurements()
+    {
+        if (userId == null) return;
+        measurements = await DbContext.BodyMeasurements
+            .Where(m => m.UserId == userId)
+            .OrderByDescending(m => m.RecordedAt)
+            .ToListAsync();
+    }
+
+    private BodyMeasurement? GetLatest(MeasurementType type) =>
+        measurements.Where(m => m.Type == type).OrderByDescending(m => m.RecordedAt).FirstOrDefault();
+
+    private BodyMeasurement? GetPrevious(MeasurementType type) =>
+        measurements.Where(m => m.Type == type).OrderByDescending(m => m.RecordedAt).Skip(1).FirstOrDefault();
+
+    private void OpenAddModal()
+    {
+        newMeasurement = new BodyMeasurement { Type = MeasurementType.Weight };
+        measurementDate = DateTime.Today;
+        showAddModal = true;
+    }
+
+    private void CloseModal() => showAddModal = false;
+
+    private async Task SaveMeasurement()
+    {
+        if (userId == null) return;
+        
+        newMeasurement.UserId = userId;
+        newMeasurement.RecordedAt = measurementDate;
+        
+        DbContext.BodyMeasurements.Add(newMeasurement);
+        await DbContext.SaveChangesAsync();
+        await LoadMeasurements();
+        CloseModal();
+    }
+
+    private async Task DeleteMeasurement(BodyMeasurement measurement)
+    {
+        DbContext.BodyMeasurements.Remove(measurement);
+        await DbContext.SaveChangesAsync();
+        await LoadMeasurements();
+    }
+
+    private string GetIcon(MeasurementType type) => type switch
+    {
+        MeasurementType.Weight => "⚖️",
+        MeasurementType.BodyFat => "📊",
+        MeasurementType.Chest => "📏",
+        MeasurementType.Waist => "📐",
+        MeasurementType.Hips => "📐",
+        MeasurementType.Thigh => "📐",
+        MeasurementType.Arm => "💪",
+        MeasurementType.Neck => "📏",
+        _ => "📊"
+    };
+
+    private string GetUnit(MeasurementType type) => type switch
+    {
+        MeasurementType.Weight => "kg",
+        MeasurementType.BodyFat => "%",
+        _ => "cm"
+    };
+}

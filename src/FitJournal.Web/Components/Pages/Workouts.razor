@@ -1,0 +1,124 @@
+@page "/workouts"
+@page "/workouts/{WorkoutId:int}"
+@using FitJournal.Core.Entities
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Workouts - FitJournal</PageTitle>
+
+<div class="workouts-page">
+    <header class="page-header">
+        <div>
+            <h1>My Workouts 💪</h1>
+            <p class="text-muted">@workouts.Count workouts logged</p>
+        </div>
+        <button class="btn btn-primary" @onclick="StartNewWorkout">
+            ➕ Start Workout
+        </button>
+    </header>
+
+    @if (workouts.Any())
+    {
+        <div class="workouts-list">
+            @foreach (var workout in workouts.OrderByDescending(w => w.StartTime))
+            {
+                <div class="workout-card @(workout.IsCompleted ? "" : "in-progress")" @onclick="() => ViewWorkout(workout.Id)">
+                    <div class="workout-date">
+                        <span class="day">@workout.StartTime.ToString("dd")</span>
+                        <span class="month">@workout.StartTime.ToString("MMM")</span>
+                    </div>
+                    <div class="workout-info">
+                        <h3>@(workout.Name ?? "Workout Session")</h3>
+                        <div class="workout-meta">
+                            <span>🕐 @FormatDuration(workout.Duration)</span>
+                            <span>📊 @workout.ExerciseLogs.Count exercises</span>
+                            <span>🔥 @workout.ExerciseLogs.SelectMany(e => e.Sets).Count() sets</span>
+                        </div>
+                    </div>
+                    <div class="workout-status">
+                        @if (workout.IsCompleted)
+                        {
+                            @if (workout.Rating.HasValue)
+                            {
+                                <span class="rating">@(new string('⭐', workout.Rating.Value))</span>
+                            }
+                            <span class="status-badge completed">Completed</span>
+                        }
+                        else
+                        {
+                            <span class="status-badge in-progress">In Progress</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="empty-state">
+            <div class="empty-icon">🏋️</div>
+            <h3>No Workouts Yet</h3>
+            <p>Start your first workout to begin tracking your progress!</p>
+            <button class="btn btn-primary" @onclick="StartNewWorkout">Start Your First Workout</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int? WorkoutId { get; set; }
+    
+    private List<WorkoutSession> workouts = new();
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (userId != null)
+        {
+            workouts = await DbContext.WorkoutSessions
+                .Where(w => w.UserId == userId)
+                .Include(w => w.ExerciseLogs)
+                    .ThenInclude(e => e.Sets)
+                .OrderByDescending(w => w.StartTime)
+                .ToListAsync();
+        }
+    }
+
+    private async Task StartNewWorkout()
+    {
+        if (userId == null) return;
+
+        var workout = new WorkoutSession
+        {
+            UserId = userId,
+            StartTime = DateTime.UtcNow,
+            Name = $"Workout - {DateTime.Now:MMM dd, yyyy}"
+        };
+
+        DbContext.WorkoutSessions.Add(workout);
+        await DbContext.SaveChangesAsync();
+        
+        Navigation.NavigateTo($"/workouts/log/{workout.Id}");
+    }
+
+    private void ViewWorkout(int id)
+    {
+        Navigation.NavigateTo($"/workouts/log/{id}");
+    }
+
+    private string FormatDuration(TimeSpan? duration)
+    {
+        if (!duration.HasValue) return "In progress";
+        var d = duration.Value;
+        if (d.TotalHours >= 1) return $"{(int)d.TotalHours}h {d.Minutes}m";
+        return $"{d.Minutes}m";
+    }
+}

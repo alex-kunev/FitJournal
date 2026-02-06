@@ -1,0 +1,319 @@
+@page "/goals"
+@using FitJournal.Core.Entities
+@using FitJournal.Core.Enums
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Goals - FitJournal</PageTitle>
+
+<div class="goals-page">
+    <header class="page-header">
+        <div>
+            <h1>My Goals 🎯</h1>
+            <p class="text-muted">Set and track your fitness objectives</p>
+        </div>
+        <button class="btn btn-primary" @onclick="OpenNewGoalModal">
+            ➕ New Goal
+        </button>
+    </header>
+
+    <div class="goals-tabs">
+        <button class="tab @(activeTab == "active" ? "active" : "")" @onclick='() => activeTab = "active"'>
+            Active (@activeGoals.Count())
+        </button>
+        <button class="tab @(activeTab == "completed" ? "active" : "")" @onclick='() => activeTab = "completed"'>
+            Completed (@completedGoals.Count())
+        </button>
+    </div>
+
+    <div class="goals-list">
+        @foreach (var goal in (activeTab == "active" ? activeGoals : completedGoals))
+        {
+            <div class="goal-card @goal.Type.ToString().ToLower()">
+                <div class="goal-header">
+                    <span class="goal-icon">@GetGoalIcon(goal.Type)</span>
+                    <span class="goal-type-badge">@goal.Type</span>
+                </div>
+                <h3>@goal.Name</h3>
+                <p class="goal-description">@goal.Description</p>
+                
+                <div class="goal-progress">
+                    @{
+                        var progress = GetProgress(goal);
+                    }
+                    <div class="progress">
+                        <div class="progress-bar" style="width: @(progress)%"></div>
+                    </div>
+                    <span class="progress-text">@progress.ToString("0")%</span>
+                </div>
+
+                <div class="goal-details">
+                    @if (goal is WeightGoal wg)
+                    {
+                        <span>🎯 Target: @wg.TargetWeight @wg.Unit</span>
+                        <span>📍 Current: @(wg.CurrentWeight ?? wg.StartWeight) @wg.Unit</span>
+                    }
+                    else if (goal is StrengthGoal sg)
+                    {
+                        <span>🏋️ @sg.Exercise?.Name</span>
+                        <span>🎯 @sg.TargetWeight @sg.Unit × @sg.TargetReps reps</span>
+                    }
+                    else if (goal is HabitGoal hg)
+                    {
+                        <span>🔥 @hg.CurrentStreak day streak</span>
+                        <span>🎯 @hg.TargetFrequency× per week</span>
+                    }
+                </div>
+
+                <div class="goal-dates">
+                    <span>Started: @goal.StartDate.ToString("MMM dd, yyyy")</span>
+                    @if (goal.TargetDate.HasValue)
+                    {
+                        <span>Target: @goal.TargetDate.Value.ToString("MMM dd, yyyy")</span>
+                    }
+                </div>
+
+                @if (goal.Status == GoalStatus.Active)
+                {
+                    <div class="goal-actions">
+                        <button class="btn btn-sm btn-secondary" @onclick="() => UpdateProgress(goal)">Update Progress</button>
+                        <button class="btn btn-sm btn-success" @onclick="() => CompleteGoal(goal)">✓ Complete</button>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (!(activeTab == "active" ? activeGoals : completedGoals).Any())
+        {
+            <div class="empty-state">
+                <div class="empty-icon">🎯</div>
+                <h3>No @activeTab goals</h3>
+                <p>@(activeTab == "active" ? "Create a new goal to start tracking!" : "Complete some goals to see them here.")</p>
+            </div>
+        }
+    </div>
+
+    @if (showNewGoalModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseModal">
+            <div class="goal-modal" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>Create New Goal</h3>
+                    <button class="modal-close" @onclick="CloseModal">✕</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Goal Type</label>
+                        <select class="form-select" @bind="newGoalType">
+                            <option value="@GoalType.Weight">Weight Goal</option>
+                            <option value="@GoalType.Strength">Strength Goal</option>
+                            <option value="@GoalType.Habit">Habit Goal</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Goal Name</label>
+                        <input type="text" class="form-control" @bind="goalName" placeholder="e.g., Reach 75kg" />
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <input type="text" class="form-control" @bind="goalDescription" placeholder="Why is this goal important?" />
+                    </div>
+
+                    @if (newGoalType == GoalType.Weight)
+                    {
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Starting Weight</label>
+                                <input type="number" class="form-control" @bind="startWeight" step="0.1" />
+                            </div>
+                            <div class="form-group">
+                                <label>Target Weight</label>
+                                <input type="number" class="form-control" @bind="targetWeight" step="0.1" />
+                            </div>
+                        </div>
+                    }
+                    else if (newGoalType == GoalType.Strength)
+                    {
+                        <div class="form-group">
+                            <label>Exercise</label>
+                            <select class="form-select" @bind="selectedExerciseId">
+                                @foreach (var ex in exercises.Where(e => e.Category == ExerciseCategory.Strength))
+                                {
+                                    <option value="@ex.Id">@ex.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Target Weight (kg)</label>
+                                <input type="number" class="form-control" @bind="targetWeight" step="0.5" />
+                            </div>
+                            <div class="form-group">
+                                <label>Target Reps</label>
+                                <input type="number" class="form-control" @bind="targetReps" />
+                            </div>
+                        </div>
+                    }
+                    else if (newGoalType == GoalType.Habit)
+                    {
+                        <div class="form-group">
+                            <label>Workouts per Week</label>
+                            <input type="number" class="form-control" @bind="targetFrequency" min="1" max="7" />
+                        </div>
+                    }
+
+                    <div class="form-group">
+                        <label>Target Date (optional)</label>
+                        <input type="date" class="form-control" @bind="targetDate" />
+                    </div>
+
+                    <button class="btn btn-primary" @onclick="CreateGoal">Create Goal</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Goal> goals = new();
+    private List<Exercise> exercises = new();
+    private string activeTab = "active";
+    private bool showNewGoalModal = false;
+    private string? userId;
+
+    // New goal form
+    private GoalType newGoalType = GoalType.Weight;
+    private string goalName = "";
+    private string goalDescription = "";
+    private decimal startWeight;
+    private decimal targetWeight;
+    private int targetReps = 1;
+    private int selectedExerciseId;
+    private int targetFrequency = 3;
+    private DateTime? targetDate;
+
+    private IEnumerable<Goal> activeGoals => goals.Where(g => g.Status == GoalStatus.Active);
+    private IEnumerable<Goal> completedGoals => goals.Where(g => g.Status == GoalStatus.Completed);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        
+        exercises = await DbContext.Exercises.ToListAsync();
+        if (exercises.Any()) selectedExerciseId = exercises.First().Id;
+        
+        await LoadGoals();
+    }
+
+    private async Task LoadGoals()
+    {
+        if (userId == null) return;
+        goals = await DbContext.Goals
+            .Include(g => (g as StrengthGoal)!.Exercise)
+            .Where(g => g.UserId == userId)
+            .ToListAsync();
+    }
+
+    private void OpenNewGoalModal()
+    {
+        goalName = "";
+        goalDescription = "";
+        startWeight = 0;
+        targetWeight = 0;
+        targetDate = null;
+        showNewGoalModal = true;
+    }
+
+    private void CloseModal() => showNewGoalModal = false;
+
+    private async Task CreateGoal()
+    {
+        if (userId == null || string.IsNullOrEmpty(goalName)) return;
+
+        Goal goal = newGoalType switch
+        {
+            GoalType.Weight => new WeightGoal
+            {
+                UserId = userId,
+                Name = goalName,
+                Description = goalDescription,
+                Type = GoalType.Weight,
+                StartDate = DateTime.UtcNow,
+                TargetDate = targetDate,
+                StartWeight = startWeight,
+                TargetWeight = targetWeight,
+                CurrentWeight = startWeight
+            },
+            GoalType.Strength => new StrengthGoal
+            {
+                UserId = userId,
+                Name = goalName,
+                Description = goalDescription,
+                Type = GoalType.Strength,
+                StartDate = DateTime.UtcNow,
+                TargetDate = targetDate,
+                ExerciseId = selectedExerciseId,
+                TargetWeight = targetWeight,
+                TargetReps = targetReps
+            },
+            GoalType.Habit => new HabitGoal
+            {
+                UserId = userId,
+                Name = goalName,
+                Description = goalDescription,
+                Type = GoalType.Habit,
+                StartDate = DateTime.UtcNow,
+                TargetDate = targetDate,
+                TargetFrequency = targetFrequency
+            },
+            _ => throw new NotImplementedException()
+        };
+
+        DbContext.Goals.Add(goal);
+        await DbContext.SaveChangesAsync();
+        await LoadGoals();
+        CloseModal();
+    }
+
+    private async Task CompleteGoal(Goal goal)
+    {
+        goal.Status = GoalStatus.Completed;
+        goal.CompletedDate = DateTime.UtcNow;
+        await DbContext.SaveChangesAsync();
+        await LoadGoals();
+    }
+
+    private Task UpdateProgress(Goal goal)
+    {
+        // TODO: Implement progress update modal
+        return Task.CompletedTask;
+    }
+
+    private double GetProgress(Goal goal)
+    {
+        return goal switch
+        {
+            WeightGoal wg when wg.TargetWeight != wg.StartWeight => 
+                Math.Min(100, Math.Abs((double)((wg.CurrentWeight ?? wg.StartWeight) - wg.StartWeight) / (double)(wg.TargetWeight - wg.StartWeight) * 100)),
+            StrengthGoal sg when sg.TargetWeight > 0 => 
+                Math.Min(100, (double)(sg.CurrentBest ?? 0) / (double)sg.TargetWeight * 100),
+            HabitGoal hg => Math.Min(100, (double)hg.CurrentStreak / 30 * 100),
+            _ => 0
+        };
+    }
+
+    private string GetGoalIcon(GoalType type) => type switch
+    {
+        GoalType.Weight => "⚖️",
+        GoalType.Strength => "🏋️",
+        GoalType.Cardio => "🏃",
+        GoalType.Habit => "📅",
+        _ => "🎯"
+    };
+}

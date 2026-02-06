@@ -1,0 +1,229 @@
+@page "/workouts/log/{WorkoutId:int}"
+@using FitJournal.Core.Entities
+@using FitJournal.Core.Enums
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+
+<PageTitle>Log Workout - FitJournal</PageTitle>
+
+@if (workout == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <div class="workout-log">
+        <header class="log-header">
+            <div>
+                <input type="text" class="workout-title-input" @bind="workout.Name" placeholder="Workout Name" />
+                <p class="text-muted">Started @workout.StartTime.ToString("MMM dd, yyyy 'at' h:mm tt")</p>
+            </div>
+            <div class="header-actions">
+                @if (!workout.IsCompleted)
+                {
+                    <button class="btn btn-success" @onclick="FinishWorkout">✓ Finish Workout</button>
+                }
+                <button class="btn btn-secondary" @onclick="GoBack">← Back</button>
+            </div>
+        </header>
+
+        <div class="exercises-section">
+            @foreach (var exerciseLog in workout.ExerciseLogs.OrderBy(e => e.Order))
+            {
+                <div class="exercise-log-card">
+                    <div class="exercise-log-header">
+                        <h3>@exerciseLog.Exercise.Name</h3>
+                        <button class="btn-icon" @onclick="() => RemoveExercise(exerciseLog)" title="Remove">🗑️</button>
+                    </div>
+                    
+                    <div class="sets-table">
+                        <div class="sets-header">
+                            <span>Set</span>
+                            <span>Weight</span>
+                            <span>Reps</span>
+                            <span>Done</span>
+                        </div>
+                        @foreach (var set in exerciseLog.Sets.OrderBy(s => s.SetNumber))
+                        {
+                            <div class="set-row @(set.IsCompleted ? "completed" : "")">
+                                <span class="set-number">@set.SetNumber</span>
+                                <input type="number" class="form-control" @bind="set.Weight" placeholder="kg" step="0.5" />
+                                <input type="number" class="form-control" @bind="set.Reps" placeholder="reps" />
+                                <button class="set-check @(set.IsCompleted ? "checked" : "")" @onclick="() => ToggleSet(set)">
+                                    @(set.IsCompleted ? "✓" : "○")
+                                </button>
+                            </div>
+                        }
+                    </div>
+                    <button class="btn btn-sm add-set-btn" @onclick="() => AddSet(exerciseLog)">+ Add Set</button>
+                </div>
+            }
+        </div>
+
+        <button class="add-exercise-btn" @onclick="OpenExercisePicker">
+            <span class="icon">➕</span>
+            <span>Add Exercise</span>
+        </button>
+
+        @if (showExercisePicker)
+        {
+            <div class="modal-backdrop" @onclick="CloseExercisePicker">
+                <div class="exercise-picker" @onclick:stopPropagation>
+                    <div class="picker-header">
+                        <h3>Add Exercise</h3>
+                        <button class="modal-close" @onclick="CloseExercisePicker">✕</button>
+                    </div>
+                    <input type="text" class="form-control search-input" placeholder="Search exercises..." 
+                           @bind="exerciseSearch" @bind:event="oninput" />
+                    <div class="exercise-list">
+                        @foreach (var ex in filteredExercises)
+                        {
+                            <div class="exercise-option" @onclick="() => AddExercise(ex)">
+                                <span class="exercise-icon">@GetCategoryIcon(ex.Category)</span>
+                                <div>
+                                    <strong>@ex.Name</strong>
+                                    <small>@ex.Category</small>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (workout.IsCompleted)
+        {
+            <div class="workout-complete-card">
+                <h3>🎉 Workout Complete!</h3>
+                <p>Great job finishing your workout!</p>
+                <div class="rating-section">
+                    <span>Rate this workout:</span>
+                    <div class="star-rating">
+                        @for (int i = 1; i <= 5; i++)
+                        {
+                            var rating = i;
+                            <button class="star @(workout.Rating >= rating ? "filled" : "")" 
+                                    @onclick="() => SetRating(rating)">★</button>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int WorkoutId { get; set; }
+    
+    private WorkoutSession? workout;
+    private List<Exercise> allExercises = new();
+    private bool showExercisePicker = false;
+    private string exerciseSearch = "";
+    private string? userId;
+
+    private IEnumerable<Exercise> filteredExercises => allExercises
+        .Where(e => string.IsNullOrEmpty(exerciseSearch) || 
+                    e.Name.Contains(exerciseSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        workout = await DbContext.WorkoutSessions
+            .Include(w => w.ExerciseLogs)
+                .ThenInclude(e => e.Exercise)
+            .Include(w => w.ExerciseLogs)
+                .ThenInclude(e => e.Sets)
+            .FirstOrDefaultAsync(w => w.Id == WorkoutId && w.UserId == userId);
+
+        allExercises = await DbContext.Exercises.OrderBy(e => e.Name).ToListAsync();
+    }
+
+    private void OpenExercisePicker() => showExercisePicker = true;
+    private void CloseExercisePicker() { showExercisePicker = false; exerciseSearch = ""; }
+
+    private async Task AddExercise(Exercise exercise)
+    {
+        if (workout == null) return;
+
+        var exerciseLog = new ExerciseLog
+        {
+            WorkoutSessionId = workout.Id,
+            ExerciseId = exercise.Id,
+            Exercise = exercise,
+            Order = workout.ExerciseLogs.Count + 1,
+            Sets = new List<SetLog>
+            {
+                new SetLog { SetNumber = 1 },
+                new SetLog { SetNumber = 2 },
+                new SetLog { SetNumber = 3 }
+            }
+        };
+
+        workout.ExerciseLogs.Add(exerciseLog);
+        DbContext.ExerciseLogs.Add(exerciseLog);
+        await DbContext.SaveChangesAsync();
+        CloseExercisePicker();
+    }
+
+    private async Task RemoveExercise(ExerciseLog exerciseLog)
+    {
+        if (workout == null) return;
+        workout.ExerciseLogs.Remove(exerciseLog);
+        DbContext.ExerciseLogs.Remove(exerciseLog);
+        await DbContext.SaveChangesAsync();
+    }
+
+    private async Task AddSet(ExerciseLog exerciseLog)
+    {
+        var newSet = new SetLog
+        {
+            ExerciseLogId = exerciseLog.Id,
+            SetNumber = exerciseLog.Sets.Count + 1
+        };
+        exerciseLog.Sets.Add(newSet);
+        DbContext.SetLogs.Add(newSet);
+        await DbContext.SaveChangesAsync();
+    }
+
+    private async Task ToggleSet(SetLog set)
+    {
+        set.IsCompleted = !set.IsCompleted;
+        await DbContext.SaveChangesAsync();
+    }
+
+    private async Task FinishWorkout()
+    {
+        if (workout == null) return;
+        workout.EndTime = DateTime.UtcNow;
+        workout.IsCompleted = true;
+        await DbContext.SaveChangesAsync();
+    }
+
+    private async Task SetRating(int rating)
+    {
+        if (workout == null) return;
+        workout.Rating = rating;
+        await DbContext.SaveChangesAsync();
+    }
+
+    private void GoBack() => Navigation.NavigateTo("/workouts");
+
+    private string GetCategoryIcon(ExerciseCategory category) => category switch
+    {
+        ExerciseCategory.Strength => "🏋️",
+        ExerciseCategory.Cardio => "🏃",
+        ExerciseCategory.Flexibility => "🧘",
+        ExerciseCategory.Balance => "⚖️",
+        ExerciseCategory.Plyometrics => "💥",
+        ExerciseCategory.Calisthenics => "🤸",
+        _ => "💪"
+    };
+}

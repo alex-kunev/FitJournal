@@ -1,0 +1,122 @@
+@page "/achievements"
+@using FitJournal.Core.Entities
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ApplicationDbContext DbContext
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<PageTitle>Achievements - FitJournal</PageTitle>
+
+<div class="achievements-page">
+    <header class="page-header">
+        <div>
+            <h1>Achievements 🏆</h1>
+            <p class="text-muted">@earnedCount / @totalCount unlocked</p>
+        </div>
+        <div class="total-points">
+            <span class="points-value">@totalPoints</span>
+            <span class="points-label">Points</span>
+        </div>
+    </header>
+
+    <div class="progress-bar-container">
+        <div class="progress">
+            <div class="progress-bar" style="width: @(totalCount > 0 ? (earnedCount * 100 / totalCount) : 0)%"></div>
+        </div>
+    </div>
+
+    <div class="achievements-grid">
+        @foreach (var achievement in allAchievements)
+        {
+            var isEarned = earnedIds.Contains(achievement.Id);
+            var earnedDate = userAchievements.FirstOrDefault(ua => ua.AchievementId == achievement.Id)?.EarnedAt;
+            
+            <div class="achievement-card @(isEarned ? "earned" : "locked")">
+                <div class="achievement-icon">@achievement.Icon</div>
+                <div class="achievement-info">
+                    <h3>@achievement.Name</h3>
+                    <p>@achievement.Description</p>
+                    @if (isEarned)
+                    {
+                        <span class="earned-date">Earned @earnedDate?.ToString("MMM dd, yyyy")</span>
+                    }
+                    else
+                    {
+                        <span class="requirement">@achievement.RequirementDescription</span>
+                    }
+                </div>
+                <div class="achievement-points">
+                    <span class="points">@achievement.Points</span>
+                    <span class="pts-label">pts</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<Achievement> allAchievements = new();
+    private List<UserAchievement> userAchievements = new();
+    private HashSet<int> earnedIds = new();
+    private string? userId;
+
+    private int earnedCount => earnedIds.Count;
+    private int totalCount => allAchievements.Count;
+    private int totalPoints => allAchievements.Where(a => earnedIds.Contains(a.Id)).Sum(a => a.Points);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        allAchievements = await DbContext.Achievements.OrderBy(a => a.Category).ThenBy(a => a.Points).ToListAsync();
+        
+        if (userId != null)
+        {
+            userAchievements = await DbContext.UserAchievements
+                .Where(ua => ua.UserId == userId)
+                .ToListAsync();
+            earnedIds = userAchievements.Select(ua => ua.AchievementId).ToHashSet();
+        }
+
+        // Seed achievements if none exist
+        if (!allAchievements.Any())
+        {
+            await SeedAchievements();
+            allAchievements = await DbContext.Achievements.OrderBy(a => a.Category).ThenBy(a => a.Points).ToListAsync();
+        }
+    }
+
+    private async Task SeedAchievements()
+    {
+        var achievements = new List<Achievement>
+        {
+            // Workout achievements
+            new() { Name = "First Steps", Description = "Complete your first workout", Icon = "🎯", Category = "Workouts", Points = 10, RequirementDescription = "Complete 1 workout" },
+            new() { Name = "Getting Started", Description = "Complete 5 workouts", Icon = "💪", Category = "Workouts", Points = 25, RequirementDescription = "Complete 5 workouts" },
+            new() { Name = "Dedicated", Description = "Complete 25 workouts", Icon = "🏋️", Category = "Workouts", Points = 50, RequirementDescription = "Complete 25 workouts" },
+            new() { Name = "Fitness Fanatic", Description = "Complete 100 workouts", Icon = "🔥", Category = "Workouts", Points = 100, RequirementDescription = "Complete 100 workouts" },
+            
+            // Streak achievements
+            new() { Name = "3-Day Streak", Description = "Work out 3 days in a row", Icon = "🔥", Category = "Streaks", Points = 15, RequirementDescription = "3 day streak" },
+            new() { Name = "Week Warrior", Description = "Work out 7 days in a row", Icon = "⚡", Category = "Streaks", Points = 35, RequirementDescription = "7 day streak" },
+            new() { Name = "Two Week Champion", Description = "Work out 14 days in a row", Icon = "🌟", Category = "Streaks", Points = 75, RequirementDescription = "14 day streak" },
+            new() { Name = "Monthly Master", Description = "Work out 30 days in a row", Icon = "👑", Category = "Streaks", Points = 150, RequirementDescription = "30 day streak" },
+            
+            // Goal achievements
+            new() { Name = "Goal Setter", Description = "Create your first goal", Icon = "🎯", Category = "Goals", Points = 10, RequirementDescription = "Create 1 goal" },
+            new() { Name = "Goal Getter", Description = "Complete a goal", Icon = "✅", Category = "Goals", Points = 50, RequirementDescription = "Complete 1 goal" },
+            new() { Name = "Ambitious", Description = "Complete 5 goals", Icon = "🏆", Category = "Goals", Points = 100, RequirementDescription = "Complete 5 goals" },
+            
+            // Tracking achievements
+            new() { Name = "Tracker", Description = "Log a body measurement", Icon = "📊", Category = "Tracking", Points = 10, RequirementDescription = "Log 1 measurement" },
+            new() { Name = "Consistent Tracker", Description = "Log measurements for 4 weeks", Icon = "📈", Category = "Tracking", Points = 40, RequirementDescription = "4 weeks of tracking" },
+        };
+
+        DbContext.Achievements.AddRange(achievements);
+        await DbContext.SaveChangesAsync();
+    }
+}

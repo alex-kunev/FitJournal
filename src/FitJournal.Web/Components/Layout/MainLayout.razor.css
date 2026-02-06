@@ -1,0 +1,100 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+main {
+    flex: 1;
+}
+
+.sidebar {
+    background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.top-row {
+    background-color: #0f3460;
+    border-bottom: 1px solid #e94560;
+    justify-content: space-between;
+    display: flex;
+    align-items: center;
+    height: 3.5rem;
+}
+
+.app-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #e94560;
+    letter-spacing: 0.5px;
+}
+
+.user-greeting {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 0.9rem;
+}
+
+.top-row a, .top-row .btn-link {
+    color: #fff;
+    text-decoration: none;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+}
+
+.top-row a:hover, .top-row .btn-link:hover {
+    background: rgba(233, 69, 96, 0.2);
+    color: #e94560;
+}
+
+.content {
+    padding-top: 1.5rem;
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+    }
+
+    .sidebar {
+        width: 250px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+    }
+
+    .top-row {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+}
+
+#blazor-error-ui {
+    background: linear-gradient(135deg, #ff416c, #ff4b2b);
+    bottom: 0;
+    box-shadow: 0 -4px 20px rgba(255, 65, 108, 0.3);
+    display: none;
+    left: 0;
+    padding: 1rem 1.5rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+    text-align: center;
+    color: white;
+    font-weight: 500;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.25rem;
+}
+
+#blazor-error-ui .reload {
+    color: white;
+    text-decoration: underline;
+    font-weight: 600;
+}

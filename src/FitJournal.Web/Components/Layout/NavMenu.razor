@@ -1,0 +1,65 @@
+@rendermode InteractiveServer
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">
+            <span class="brand-icon">🏋️</span> FitJournal
+        </a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="nav-icon">🏠</span> Dashboard
+            </NavLink>
+        </div>
+        
+        <div class="nav-section-title">TRAINING</div>
+        
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="workouts">
+                <span class="nav-icon">💪</span> Workouts
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="exercises">
+                <span class="nav-icon">📋</span> Exercises
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="timer">
+                <span class="nav-icon">⏱️</span> Live Timer
+            </NavLink>
+        </div>
+        
+        <div class="nav-section-title">PROGRESS</div>
+        
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="goals">
+                <span class="nav-icon">🎯</span> Goals
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="measurements">
+                <span class="nav-icon">📊</span> Measurements
+            </NavLink>
+        </div>
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="achievements">
+                <span class="nav-icon">🏆</span> Achievements
+            </NavLink>
+        </div>
+        
+        <div class="nav-section-title">SOCIAL</div>
+        
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="feed">
+                <span class="nav-icon">📰</span> Activity Feed
+            </NavLink>
+        </div>
+    </nav>
+</div>

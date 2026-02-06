@@ -1,0 +1,216 @@
+@page "/timer"
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Live Timer - FitJournal</PageTitle>
+
+<div class="timer-page">
+    <header class="page-header">
+        <h1>Live Workout Timer ⏱️</h1>
+        <p class="text-muted">Synced across all your devices in real-time</p>
+    </header>
+
+    <div class="timer-container">
+        <div class="timer-display">
+            <div class="timer-time">
+                <span class="minutes">@minutes.ToString("00")</span>
+                <span class="separator">:</span>
+                <span class="seconds">@seconds.ToString("00")</span>
+            </div>
+            <div class="timer-progress">
+                <div class="progress-ring">
+                    <svg viewBox="0 0 100 100">
+                        <circle class="progress-bg" cx="50" cy="50" r="45" />
+                        <circle class="progress-fill" cx="50" cy="50" r="45" 
+                                style="stroke-dasharray: @progressDashArray; stroke-dashoffset: @progressOffset" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <div class="timer-controls">
+            @if (!isRunning)
+            {
+                <button class="btn-timer start" @onclick="StartTimer">
+                    <span class="icon">▶</span>
+                    <span>Start</span>
+                </button>
+            }
+            else
+            {
+                <button class="btn-timer pause" @onclick="PauseTimer">
+                    <span class="icon">⏸</span>
+                    <span>Pause</span>
+                </button>
+            }
+            <button class="btn-timer stop" @onclick="ResetTimer">
+                <span class="icon">⏹</span>
+                <span>Reset</span>
+            </button>
+        </div>
+
+        <div class="preset-buttons">
+            <span class="preset-label">Quick Set:</span>
+            <button class="preset" @onclick="() => SetDuration(30)">30s</button>
+            <button class="preset" @onclick="() => SetDuration(60)">1m</button>
+            <button class="preset" @onclick="() => SetDuration(90)">1:30</button>
+            <button class="preset" @onclick="() => SetDuration(120)">2m</button>
+            <button class="preset" @onclick="() => SetDuration(180)">3m</button>
+            <button class="preset" @onclick="() => SetDuration(300)">5m</button>
+        </div>
+
+        <div class="custom-time">
+            <label>Custom Duration:</label>
+            <div class="time-inputs">
+                <input type="number" class="form-control" @bind="customMinutes" min="0" max="99" placeholder="min" />
+                <span>:</span>
+                <input type="number" class="form-control" @bind="customSeconds" min="0" max="59" placeholder="sec" />
+                <button class="btn btn-secondary" @onclick="SetCustomDuration">Set</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="connection-status">
+        <span class="status-dot @(isConnected ? "connected" : "disconnected")"></span>
+        @(isConnected ? "Real-time sync active" : "Connecting...")
+    </div>
+</div>
+
+@code {
+    private HubConnection? hubConnection;
+    private string sessionId = Guid.NewGuid().ToString();
+    private bool isConnected = false;
+    private bool isRunning = false;
+    private int totalSeconds = 60;
+    private int remainingSeconds = 60;
+    private int customMinutes = 1;
+    private int customSeconds = 0;
+    private System.Timers.Timer? timer;
+
+    private int minutes => remainingSeconds / 60;
+    private int seconds => remainingSeconds % 60;
+    private double progressDashArray => 2 * Math.PI * 45;
+    private double progressOffset => totalSeconds > 0 
+        ? progressDashArray * (1 - (double)remainingSeconds / totalSeconds) 
+        : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/hubs/timer"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<int>("TimerTick", (remaining) =>
+        {
+            remainingSeconds = remaining;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On("TimerCompleted", () =>
+        {
+            isRunning = false;
+            remainingSeconds = 0;
+            InvokeAsync(StateHasChanged);
+        });
+
+        hubConnection.On("TimerStopped", () =>
+        {
+            isRunning = false;
+            remainingSeconds = totalSeconds;
+            InvokeAsync(StateHasChanged);
+        });
+
+        try
+        {
+            await hubConnection.StartAsync();
+            isConnected = true;
+            await hubConnection.SendAsync("JoinTimerSession", sessionId);
+        }
+        catch
+        {
+            isConnected = false;
+        }
+
+        timer = new System.Timers.Timer(1000);
+        timer.Elapsed += async (s, e) =>
+        {
+            if (isRunning && remainingSeconds > 0)
+            {
+                remainingSeconds--;
+                if (hubConnection?.State == HubConnectionState.Connected)
+                {
+                    await hubConnection.SendAsync("UpdateTimerTick", sessionId, remainingSeconds);
+                }
+                await InvokeAsync(StateHasChanged);
+
+                if (remainingSeconds <= 0)
+                {
+                    isRunning = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        };
+    }
+
+    private async Task StartTimer()
+    {
+        isRunning = true;
+        timer?.Start();
+        if (hubConnection?.State == HubConnectionState.Connected)
+        {
+            await hubConnection.SendAsync("StartTimer", sessionId, totalSeconds);
+        }
+    }
+
+    private async Task PauseTimer()
+    {
+        isRunning = false;
+        timer?.Stop();
+        if (hubConnection?.State == HubConnectionState.Connected)
+        {
+            await hubConnection.SendAsync("PauseTimer", sessionId);
+        }
+    }
+
+    private async Task ResetTimer()
+    {
+        isRunning = false;
+        timer?.Stop();
+        remainingSeconds = totalSeconds;
+        if (hubConnection?.State == HubConnectionState.Connected)
+        {
+            await hubConnection.SendAsync("StopTimer", sessionId);
+        }
+    }
+
+    private void SetDuration(int secs)
+    {
+        totalSeconds = secs;
+        remainingSeconds = secs;
+        isRunning = false;
+        timer?.Stop();
+    }
+
+    private void SetCustomDuration()
+    {
+        totalSeconds = (customMinutes * 60) + customSeconds;
+        remainingSeconds = totalSeconds;
+        isRunning = false;
+        timer?.Stop();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        timer?.Dispose();
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("LeaveTimerSession", sessionId);
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

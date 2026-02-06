@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>aspnet-FitJournal.Web-74aebc57-28d4-4a74-8fbe-8f09b0d59815</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Diagnostics.EntityFrameworkCore" Version="9.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="9.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FitJournal.Core\FitJournal.Core.csproj" />
+    <ProjectReference Include="..\FitJournal.Application\FitJournal.Application.csproj" />
+    <ProjectReference Include="..\FitJournal.Infrastructure\FitJournal.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

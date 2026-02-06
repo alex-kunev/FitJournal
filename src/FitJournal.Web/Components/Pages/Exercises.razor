@@ -1,0 +1,161 @@
+@page "/exercises"
+@using FitJournal.Core.Entities
+@using FitJournal.Core.Enums
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+@rendermode InteractiveServer
+
+<PageTitle>Exercise Library - FitJournal</PageTitle>
+
+<div class="exercises-page">
+    <header class="page-header">
+        <div>
+            <h1>Exercise Library 📋</h1>
+            <p class="text-muted">Browse @filteredExercises.Count() exercises</p>
+        </div>
+    </header>
+
+    <div class="filters">
+        <div class="filter-group">
+            <label>Category</label>
+            <select class="form-select" @bind="selectedCategory">
+                <option value="">All Categories</option>
+                @foreach (var category in Enum.GetValues<ExerciseCategory>())
+                {
+                    <option value="@category">@category</option>
+                }
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Muscle Group</label>
+            <select class="form-select" @bind="selectedMuscleGroup">
+                <option value="">All Muscles</option>
+                @foreach (var muscle in Enum.GetValues<MuscleGroup>())
+                {
+                    <option value="@muscle">@muscle</option>
+                }
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>Difficulty</label>
+            <select class="form-select" @bind="selectedDifficulty">
+                <option value="">All Levels</option>
+                @foreach (var diff in Enum.GetValues<DifficultyLevel>())
+                {
+                    <option value="@diff">@diff</option>
+                }
+            </select>
+        </div>
+        <div class="filter-group search-group">
+            <label>Search</label>
+            <input type="text" class="form-control" placeholder="Search exercises..." @bind="searchTerm" @bind:event="oninput" />
+        </div>
+    </div>
+
+    <div class="exercises-grid">
+        @foreach (var exercise in filteredExercises)
+        {
+            <div class="exercise-card" @onclick="() => SelectExercise(exercise)">
+                <div class="exercise-header">
+                    <span class="exercise-icon">@GetCategoryIcon(exercise.Category)</span>
+                    <span class="difficulty-badge @exercise.Difficulty.ToString().ToLower()">@exercise.Difficulty</span>
+                </div>
+                <h3>@exercise.Name</h3>
+                <p class="exercise-description">@exercise.Description</p>
+                <div class="muscle-tags">
+                    @foreach (var mg in exercise.ExerciseMuscleGroups.Where(m => m.IsPrimary).Take(2))
+                    {
+                        <span class="muscle-tag">@mg.MuscleGroup</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (selectedExercise != null)
+    {
+        <div class="exercise-modal-backdrop" @onclick="CloseModal">
+            <div class="exercise-modal" @onclick:stopPropagation>
+                <button class="modal-close" @onclick="CloseModal">✕</button>
+                <div class="modal-header">
+                    <span class="exercise-icon large">@GetCategoryIcon(selectedExercise.Category)</span>
+                    <div>
+                        <h2>@selectedExercise.Name</h2>
+                        <span class="difficulty-badge @selectedExercise.Difficulty.ToString().ToLower()">@selectedExercise.Difficulty</span>
+                        <span class="category-badge">@selectedExercise.Category</span>
+                    </div>
+                </div>
+                <div class="modal-body">
+                    <p>@selectedExercise.Description</p>
+                    
+                    <h4>Target Muscles</h4>
+                    <div class="muscle-tags">
+                        @foreach (var mg in selectedExercise.ExerciseMuscleGroups)
+                        {
+                            <span class="muscle-tag @(mg.IsPrimary ? "primary" : "secondary")">
+                                @mg.MuscleGroup @(mg.IsPrimary ? "(Primary)" : "")
+                            </span>
+                        }
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(selectedExercise.Instructions))
+                    {
+                        <h4>Instructions</h4>
+                        <p>@selectedExercise.Instructions</p>
+                    }
+
+                    @if (selectedExercise.Variations.Any())
+                    {
+                        <h4>Variations</h4>
+                        <ul class="variations-list">
+                            @foreach (var variation in selectedExercise.Variations)
+                            {
+                                <li>@variation.Name</li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Exercise> exercises = new();
+    private Exercise? selectedExercise;
+    private string searchTerm = "";
+    private string selectedCategory = "";
+    private string selectedMuscleGroup = "";
+    private string selectedDifficulty = "";
+
+    private IEnumerable<Exercise> filteredExercises => exercises
+        .Where(e => string.IsNullOrEmpty(searchTerm) || e.Name.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+        .Where(e => string.IsNullOrEmpty(selectedCategory) || e.Category.ToString() == selectedCategory)
+        .Where(e => string.IsNullOrEmpty(selectedDifficulty) || e.Difficulty.ToString() == selectedDifficulty)
+        .Where(e => string.IsNullOrEmpty(selectedMuscleGroup) || 
+            e.ExerciseMuscleGroups.Any(m => m.MuscleGroup.ToString() == selectedMuscleGroup));
+
+    protected override async Task OnInitializedAsync()
+    {
+        exercises = await DbContext.Exercises
+            .Include(e => e.ExerciseMuscleGroups)
+            .Include(e => e.Variations)
+            .OrderBy(e => e.Name)
+            .ToListAsync();
+    }
+
+    private void SelectExercise(Exercise exercise) => selectedExercise = exercise;
+    private void CloseModal() => selectedExercise = null;
+
+    private string GetCategoryIcon(ExerciseCategory category) => category switch
+    {
+        ExerciseCategory.Strength => "🏋️",
+        ExerciseCategory.Cardio => "🏃",
+        ExerciseCategory.Flexibility => "🧘",
+        ExerciseCategory.Balance => "⚖️",
+        ExerciseCategory.Plyometrics => "💥",
+        ExerciseCategory.Calisthenics => "🤸",
+        _ => "💪"
+    };
+}

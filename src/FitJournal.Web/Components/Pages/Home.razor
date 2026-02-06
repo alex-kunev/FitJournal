@@ -1,0 +1,90 @@
+@page "/"
+@using Microsoft.AspNetCore.Authorization
+@using FitJournal.Infrastructure.Data
+@using Microsoft.EntityFrameworkCore
+@inject ApplicationDbContext DbContext
+
+<PageTitle>Dashboard - FitJournal</PageTitle>
+
+<div class="dashboard">
+    <header class="dashboard-header">
+        <div>
+            <h1>Welcome to FitJournal 🏋️</h1>
+            <p class="text-muted">Track your fitness journey, set goals, and crush them!</p>
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <a href="workouts/new" class="btn btn-primary">
+                    <span>➕</span> Start Workout
+                </a>
+            </Authorized>
+            <NotAuthorized>
+                <a href="Account/Register" class="btn btn-primary">Get Started</a>
+            </NotAuthorized>
+        </AuthorizeView>
+    </header>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">@exerciseCount</div>
+            <div class="stat-label">Exercises Available</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Workouts This Week</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Current Streak 🔥</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Achievements</div>
+        </div>
+    </div>
+
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">💪</div>
+            <h3>Log Workouts</h3>
+            <p>Track every rep, set, and PR with detailed workout logging.</p>
+            <a href="workouts" class="btn btn-secondary">View Workouts</a>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">🎯</div>
+            <h3>Set Goals</h3>
+            <p>Create weight, strength, and cardio goals to stay motivated.</p>
+            <a href="goals" class="btn btn-secondary">Manage Goals</a>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Track Progress</h3>
+            <p>Monitor your body measurements and see your transformation.</p>
+            <a href="measurements" class="btn btn-secondary">View Progress</a>
+        </div>
+        
+        <div class="feature-card">
+            <div class="feature-icon">⏱️</div>
+            <h3>Live Timer</h3>
+            <p>Real-time workout timer synced across all your devices.</p>
+            <a href="timer" class="btn btn-secondary">Start Timer</a>
+        </div>
+    </div>
+
+    <div class="exercise-preview">
+        <h2>Exercise Library</h2>
+        <p class="text-muted">Browse @exerciseCount exercises across all muscle groups</p>
+        <a href="exercises" class="btn btn-primary">Explore Exercises →</a>
+    </div>
+</div>
+
+@code {
+    private int exerciseCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        exerciseCount = await DbContext.Exercises.CountAsync();
+    }
+}
